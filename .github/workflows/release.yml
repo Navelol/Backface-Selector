@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get tag name
+        id: tag
+        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Package addon
+        run: |
+          zip SelectBackfacing-${{ steps.tag.outputs.TAG }}.zip SelectBackfacing.py README.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.TAG }}
+          name: "Select Orientation ${{ steps.tag.outputs.TAG }}"
+          body: |
+            ## Select Orientation with Z-Depth ${{ steps.tag.outputs.TAG }}
+
+            ### Installation
+            1. Download `SelectBackfacing-${{ steps.tag.outputs.TAG }}.zip` below
+            2. In Blender: **Edit → Preferences → Add-ons → Install**
+            3. Select the zip and enable the addon
+            4. Find it in the **N-Panel → Select** tab
+
+            ### Changelog
+            _Add your changelog notes here before pushing the tag, or edit the release after._
+          files: |
+            SelectBackfacing-${{ steps.tag.outputs.TAG }}.zip
+            SelectBackfacing.py
