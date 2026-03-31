@@ -45,6 +45,8 @@ Open the **N-Panel** (`N` key in the 3D Viewport) and go to the **Select** tab.
 ### X-Ray (Ignore Occlusion)
 Toggle this on to select matching faces even if they are hidden behind other geometry. When off, only faces visible from the current viewpoint are selected.
 
+![ezgif-2670251efbe70e60](https://github.com/user-attachments/assets/cc028ae0-32f6-475c-98ce-8c2b1a0a6682)
+
 ---
 
 ## Notes
