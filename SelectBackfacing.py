@@ -48,31 +48,56 @@ def get_correct_normal_matrix(mat_world):
     return mat_world.inverted().transposed().to_3x3()
 
 
-def is_face_visible_via_raycast(scene, depsgraph, view_origin,
-                                 face_center_world, obj_eval, poly_index):
+def is_vert_visible(scene, depsgraph, view_origin, vert_world):
     """
-    Returns True if the face at poly_index is the first thing hit by a ray
-    from view_origin, or if nothing is hit at all.
+    Cast a ray from vert_world back toward view_origin.
+    Shooting from the geometry outward avoids self-intersection entirely.
+    Returns True if nothing blocks the path.
     """
-    direction_vec = face_center_world - view_origin
+    direction_vec = view_origin - vert_world
     distance = direction_vec.length
     if distance < 1e-6:
         return True
 
     direction = direction_vec.normalized()
-    hit_distance = distance * 0.9999  # stop just before the face center
+    nudged_origin = vert_world + direction * 1e-4
+    hit_distance = distance - 1e-4
 
-    hit, _loc, _normal, face_idx, obj_hit, _ = scene.ray_cast(
+    if hit_distance <= 0:
+        return True
+
+    hit, _loc, _normal, _face_idx, _obj_hit, _ = scene.ray_cast(
         depsgraph,
-        view_origin,
+        nudged_origin,
         direction,
         distance=hit_distance
     )
 
-    if not hit:
-        return True  # nothing in the way
+    return not hit  # no hit == nothing blocking == vert is visible
 
-    return obj_hit == obj_eval and face_idx == poly_index
+
+def build_visible_verts(scene, depsgraph, view_origin, mesh_eval, mat_world_eval, candidate_vert_indices):
+    """
+    For each unique vert index in candidate_vert_indices, cast exactly one ray.
+    Returns a set of vert indices that are directly visible from the viewport.
+
+    Optimisations:
+    - One ray per unique vert (shared verts across faces are never re-cast)
+    - O(1) skip via checked_verts set for already-processed verts
+    """
+    visible_verts = set()
+    checked_verts = set()
+
+    for vi in candidate_vert_indices:
+        if vi in checked_verts:
+            continue
+        checked_verts.add(vi)
+
+        vert_world = mat_world_eval @ mesh_eval.vertices[vi].co
+        if is_vert_visible(scene, depsgraph, view_origin, vert_world):
+            visible_verts.add(vi)
+
+    return visible_verts
 
 
 def flood_fill_islands(bm, seed_face_indices):
@@ -202,16 +227,29 @@ def run_orientation_selection(context, select_backfaces, xray, loose_parts):
         after_occlusion = orientation_pass
     else:
         after_occlusion = set()
+        mat_world_eval = obj_eval.matrix_world
+
+        # Collect all unique vert indices from orientation-passing faces
+        candidate_verts = set()
+        face_to_verts = {}  # face index -> list of vert indices
         for poly in mesh_eval.polygons:
             if poly.index not in orientation_pass:
                 continue
-            face_center_world = obj_eval.matrix_world @ poly.center
-            if is_face_visible_via_raycast(
-                context.scene, depsgraph,
-                view_origin, face_center_world,
-                obj_eval, poly.index
-            ):
-                after_occlusion.add(poly.index)
+            verts = list(poly.vertices)
+            face_to_verts[poly.index] = verts
+            candidate_verts.update(verts)
+
+        # One ray per unique vert, shot from vert toward camera
+        visible_verts = build_visible_verts(
+            context.scene, depsgraph,
+            view_origin, mesh_eval, mat_world_eval,
+            candidate_verts
+        )
+
+        # A face is a valid seed if ANY of its verts are visible
+        for fi, verts in face_to_verts.items():
+            if any(vi in visible_verts for vi in verts):
+                after_occlusion.add(fi)
 
     # ------------------------------------------------------------------
     # Step 3 (optional): Expand seeds to full connected islands
